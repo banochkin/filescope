@@ -1,0 +1,39 @@
+# One-time helper, run by hand.
+#
+# The Marketplace will not accept a managed identity by client id, object id or
+# ARM resource id. It only recognises the identity's Azure DevOps *profile* id,
+# and that profile does not exist until the identity has talked to Azure DevOps
+# at least once. This workflow makes that first call and prints the id to paste
+# into the publisher's Members list.
+#
+# Run it from the Actions tab, then delete nothing — it is harmless to keep and
+# useful again whenever the publisher's membership has to be rebuilt.
+name: Azure identity profile id
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  profile:
+    runs-on: ubuntu-latest
+    environment: marketplace-publish
+    steps:
+      - name: Sign in to Azure
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          allow-no-subscriptions: true
+
+      - name: Read the Azure DevOps profile id
+        run: |
+          echo "Paste the id below into the publisher's Members search field:"
+          az rest \
+            --url https://app.vssps.visualstudio.com/_apis/profile/profiles/me \
+            --resource 499b84ac-1321-427f-aa17-267ca6975798 \
+            --query id \
+            --output tsv
