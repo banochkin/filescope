@@ -3,7 +3,7 @@ import { Configuration } from "./configuration";
 import { FileInfo } from "./fileInfo";
 import { detailsHtml } from "./render";
 
-const VIEW_TYPE = "filescope.details";
+export const DETAILS_VIEW_TYPE = "filescope.details";
 
 /**
  * A single reusable panel. Creating one per click would stack panels the user
@@ -13,8 +13,8 @@ export class DetailsPanel implements vscode.Disposable {
     public reveal(info: FileInfo, configuration: Configuration): void {
         if (!this.panel) {
             this.panel = vscode.window.createWebviewPanel(
-                VIEW_TYPE,
-                "File Properties",
+                DETAILS_VIEW_TYPE,
+                "FileScope",
                 { viewColumn: vscode.ViewColumn.Beside, preserveFocus: true },
                 { enableScripts: false, localResourceRoots: [] },
             );
@@ -28,15 +28,26 @@ export class DetailsPanel implements vscode.Disposable {
         this.render(info, configuration);
     }
 
+    /**
+     * Takes ownership of a panel VS Code restored after a window reload. Without
+     * this the restored tab would stay blank and unowned, and the next reveal()
+     * would open a second panel beside it.
+     */
+    public adopt(panel: vscode.WebviewPanel): void {
+        this.panel?.dispose();
+        this.panel = panel;
+        // A restored panel arrives with whatever options were serialised with it.
+        this.panel.webview.options = { enableScripts: false, localResourceRoots: [] };
+        this.panel.onDidDispose(() => {
+            this.panel = undefined;
+        });
+    }
+
     /** Refreshes an already open panel; does nothing when there is none. */
     public update(info: FileInfo, configuration: Configuration): void {
         if (this.panel) {
             this.render(info, configuration);
         }
-    }
-
-    public get isOpen(): boolean {
-        return this.panel !== undefined;
     }
 
     public dispose(): void {

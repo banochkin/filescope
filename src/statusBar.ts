@@ -58,7 +58,7 @@ export class StatusBar implements vscode.Disposable {
 
     private createItem(): vscode.StatusBarItem {
         const item = vscode.window.createStatusBarItem(ITEM_ID, this.alignment, this.priority);
-        item.name = "File Properties";
+        item.name = "FileScope";
         item.command = this.command;
         item.accessibilityInformation = { label: "File properties", role: "button" };
         return item;

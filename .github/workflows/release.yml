@@ -1,0 +1,43 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run check-types
+      - run: npm run compile-tests
+      - run: xvfb-run -a npx vscode-test
+
+      - name: Package
+        run: npx @vscode/vsce package --out filescope.vsix
+
+      - name: Publish to the Visual Studio Marketplace
+        run: npx @vscode/vsce publish --packagePath filescope.vsix
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+
+      - name: Publish to Open VSX
+        if: ${{ secrets.OVSX_PAT != '' }}
+        run: npx ovsx publish filescope.vsix
+        env:
+          OVSX_PAT: ${{ secrets.OVSX_PAT }}
+
+      - name: Attach the VSIX to the GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: filescope.vsix
+          generate_release_notes: true

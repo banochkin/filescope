@@ -19,10 +19,35 @@ function uriFromTabInput(input: unknown): vscode.Uri | undefined {
     return undefined;
 }
 
-function hasAnyFileBackedTab(): boolean {
+function isTabOpen(uri: vscode.Uri): boolean {
+    const target = uri.toString();
     return vscode.window.tabGroups.all.some((group) =>
-        group.tabs.some((tab) => uriFromTabInput(tab.input) !== undefined),
+        group.tabs.some((tab) => uriFromTabInput(tab.input)?.toString() === target),
     );
+}
+
+/**
+ * The best guess available when neither the active tab nor the active editor owns
+ * a file: another group's active tab, or failing that any open file-backed tab.
+ * Without it, activating while a non-file tab happens to be focused would leave
+ * the status bar empty until the user clicked a file.
+ */
+function anyFileBackedUri(): vscode.Uri | undefined {
+    for (const group of vscode.window.tabGroups.all) {
+        const fromActive = group.activeTab ? uriFromTabInput(group.activeTab.input) : undefined;
+        if (fromActive) {
+            return fromActive;
+        }
+    }
+    for (const group of vscode.window.tabGroups.all) {
+        for (const tab of group.tabs) {
+            const uri = uriFromTabInput(tab.input);
+            if (uri) {
+                return uri;
+            }
+        }
+    }
+    return undefined;
 }
 
 /**
@@ -75,7 +100,14 @@ export class ActiveResourceTracker implements vscode.Disposable {
             return fromEditor;
         }
 
-        return hasAnyFileBackedTab() ? this.current : undefined;
+        // The focused tab owns no file — a webview, a terminal, this extension's
+        // own details panel. Keep reporting the last resource while its tab is
+        // still open, and only fall back once it is gone.
+        const fallback = anyFileBackedUri();
+        if (!fallback) {
+            return undefined;
+        }
+        return this.current && isTabOpen(this.current) ? this.current : fallback;
     }
 
     private current: vscode.Uri | undefined;

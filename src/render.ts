@@ -51,9 +51,15 @@ function escapeHtml(value: string): string {
     });
 }
 
-/** Pipes and backslashes would otherwise break out of a Markdown table cell. */
+/**
+ * File names may legally contain newlines, pipes and emphasis characters, any of
+ * which would break out of a Markdown table cell or silently restyle the text.
+ */
 function escapeMarkdownCell(value: string): string {
-    return value.replace(/\\/g, "\\\\").replace(/\|/g, "\\|");
+    return value
+        .replace(/\\/g, "\\\\")
+        .replace(/[\r\n]+/g, " ")
+        .replace(/([|*_`~[\]<>])/g, "\\$1");
 }
 
 function ownerText(info: FileInfo): string | undefined {
@@ -146,14 +152,19 @@ export function detailRows(info: FileInfo, configuration: Configuration): Detail
         },
     ];
 
-    if (info.mode !== undefined) {
+    // Windows reports a synthesised POSIX mode that says nothing about the NTFS
+    // ACL, so rendering it as permissions would be a confident falsehood.
+    if (info.mode !== undefined && process.platform !== "win32") {
         rows.push({
             label: "Permissions",
             value: `${formatMode(info.mode)} · ${formatOctalMode(info.mode)}`,
         });
     }
+    const writable = info.mode === undefined ? undefined : (info.mode & 0o200) !== 0;
     if (info.readonly) {
         rows.push({ label: "Read-only", value: "yes" });
+    } else if (process.platform === "win32" && writable !== undefined) {
+        rows.push({ label: "Read-only", value: writable ? "no" : "yes" });
     }
 
     const owner = ownerText(info);
@@ -227,11 +238,26 @@ export function tooltipMarkdown(info: FileInfo, configuration: Configuration): v
     return tooltip;
 }
 
+function createNonce(): string {
+    const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+    let nonce = "";
+    for (let index = 0; index < 32; index++) {
+        nonce += alphabet.charAt(Math.floor(Math.random() * alphabet.length));
+    }
+    return nonce;
+}
+
+/**
+ * `cspSource` must stay in the style directive alongside the nonce: the editor
+ * injects its own theme stylesheet into every webview, and a nonce-only policy
+ * would block it, leaving the --vscode-* variables undefined.
+ */
 export function detailsHtml(
     info: FileInfo,
     configuration: Configuration,
     cspSource: string,
 ): string {
+    const nonce = createNonce();
     const rows = detailRows(info, configuration)
         .map(
             (row) =>
@@ -243,10 +269,10 @@ export function detailsHtml(
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${cspSource} 'unsafe-inline';">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${cspSource} 'nonce-${nonce}';">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>${escapeHtml(info.name)}</title>
-    <style>
+    <style nonce="${nonce}">
         body {
             font-family: var(--vscode-font-family);
             font-size: var(--vscode-font-size);

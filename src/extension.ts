@@ -1,8 +1,8 @@
 import * as vscode from "vscode";
-import { dirname, basename } from "path";
+import { dirname } from "path";
 import { ActiveResourceTracker } from "./activeResource";
 import { ConfigurationStore } from "./configuration";
-import { DetailsPanel } from "./detailsPanel";
+import { DETAILS_VIEW_TYPE, DetailsPanel } from "./detailsPanel";
 import { FileInfo, readFileInfo } from "./fileInfo";
 import { clearOwnershipCache } from "./ownership";
 import { statusBarText, tooltipMarkdown } from "./render";
@@ -34,6 +34,18 @@ class FileScope implements vscode.Disposable {
                 this.statusBar.applyConfiguration(this.configurationStore.configuration);
                 void this.refresh();
             }),
+            vscode.window.registerWebviewPanelSerializer(DETAILS_VIEW_TYPE, {
+                deserializeWebviewPanel: async (panel) => {
+                    this.detailsPanel.adopt(panel);
+                    const configuration = this.configurationStore.configuration;
+                    const info =
+                        this.lastInfo ??
+                        (await this.readActiveInfo(configuration.resolveOwnershipNames));
+                    if (info) {
+                        this.detailsPanel.update(info, configuration);
+                    }
+                },
+            }),
             vscode.workspace.onDidSaveTextDocument((document) => {
                 if (document.uri.toString() === this.tracker.uri?.toString()) {
                     void this.refresh();
@@ -52,6 +64,10 @@ class FileScope implements vscode.Disposable {
     }
 
     private async refresh(): Promise<void> {
+        // Claimed before anything else: a refresh that resolves to no file still
+        // has to invalidate a slower one already in flight, or that one will
+        // resurrect the status bar for a file the user has closed.
+        const generation = ++this.generation;
         const uri = this.tracker.uri;
         const configuration = this.configurationStore.configuration;
 
@@ -61,8 +77,6 @@ class FileScope implements vscode.Disposable {
             return;
         }
 
-        // Reads are asynchronous, so a slow one must not overwrite a newer result.
-        const generation = ++this.generation;
         let info: FileInfo;
         try {
             info = await readFileInfo(uri, configuration.resolveOwnershipNames);
@@ -97,14 +111,30 @@ class FileScope implements vscode.Disposable {
     }
 
     private async showDetails(): Promise<void> {
-        if (!this.lastInfo) {
-            await this.refresh();
-        }
-        if (!this.lastInfo) {
+        const configuration = this.configurationStore.configuration;
+        // Reads its own copy rather than waiting on refresh(): a concurrent
+        // refresh would discard this one's result as stale, and an explicit
+        // request must not fail because something else was in flight.
+        const info = this.lastInfo ?? (await this.readActiveInfo(configuration.resolveOwnershipNames));
+
+        if (!info) {
             void vscode.window.showInformationMessage("FileScope: no file is currently active.");
             return;
         }
-        this.detailsPanel.reveal(this.lastInfo, this.configurationStore.configuration);
+        this.detailsPanel.reveal(info, configuration);
+    }
+
+    private async readActiveInfo(resolveNames: boolean): Promise<FileInfo | undefined> {
+        const uri = this.tracker.uri;
+        if (!uri) {
+            return undefined;
+        }
+        try {
+            return await readFileInfo(uri, resolveNames);
+        } catch (error) {
+            this.log(error);
+            return undefined;
+        }
     }
 
     /**
@@ -120,12 +150,16 @@ class FileScope implements vscode.Disposable {
             return;
         }
 
-        const pattern = new vscode.RelativePattern(
-            vscode.Uri.file(dirname(uri.fsPath)),
-            basename(uri.fsPath),
-        );
+        // The file name cannot go into the pattern: it is read as a glob, and a
+        // name like `[id].tsx` would become a character class matching anything
+        // but itself. Watch the directory and compare paths by hand instead.
+        const watched = uri.fsPath;
+        const pattern = new vscode.RelativePattern(vscode.Uri.file(dirname(watched)), "*");
         const watcher = vscode.workspace.createFileSystemWatcher(pattern);
-        const onEvent = () => {
+        const onEvent = (changed: vscode.Uri) => {
+            if (changed.fsPath !== watched) {
+                return;
+            }
             if (this.watchTimer) {
                 clearTimeout(this.watchTimer);
             }

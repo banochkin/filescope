@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run check-types
+      - run: npm run compile-tests
+      - run: xvfb-run -a npx vscode-test
+        if: runner.os == 'Linux'
+      - run: npx vscode-test
+        if: runner.os != 'Linux'
+      - name: Verify the extension packages
+        if: runner.os == 'Linux'
+        run: npx @vscode/vsce package --out filescope.vsix

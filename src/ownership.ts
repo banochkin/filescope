@@ -65,8 +65,10 @@ function nameOrUndefined(candidate: string, id: number): string | undefined {
     return trimmed;
 }
 
-export function supportsOwnershipNames(): boolean {
-    return statArgs("") !== undefined;
+function remember(cache: Map<number, string | undefined>, id: number, name: string | undefined): void {
+    if (name !== undefined || !cache.has(id)) {
+        cache.set(id, name);
+    }
 }
 
 export async function resolveOwnership(
@@ -108,9 +110,10 @@ export async function resolveOwnership(
         // No stat binary, no permission, or a timeout: numeric ids remain the answer.
     }
 
-    // Cached either way, so a failed lookup costs one process per id pair, not one per file.
-    userNames.set(uid, ownership.user);
-    groupNames.set(gid, ownership.group);
+    // Cached either way, so a failed lookup costs one process per id, not one per
+    // file — but a failure must not overwrite a name an earlier lookup did resolve.
+    remember(userNames, uid, ownership.user);
+    remember(groupNames, gid, ownership.group);
 
     return ownership;
 }
