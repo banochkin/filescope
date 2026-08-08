@@ -6,15 +6,10 @@ on:
 
 permissions:
   contents: write
-  id-token: write
 
 jobs:
   publish:
     runs-on: ubuntu-latest
-    # The federated credential trusts this environment by name. It must match the
-    # GitHub environment configured on the managed identity, or the OIDC exchange
-    # is refused before anything is published.
-    environment: marketplace-publish
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -30,19 +25,13 @@ jobs:
       - name: Package
         run: npx @vscode/vsce package --out filescope.vsix
 
-      # Workload identity federation: no long-lived secret is stored, the OIDC
-      # token GitHub mints here is valid for minutes. AZURE_CLIENT_ID is the
-      # managed identity's client id and is not a secret in any meaningful sense,
-      # but it is kept in secrets to avoid publishing tenant topology.
-      - name: Sign in to Azure
-        uses: azure/login@v2
-        with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          allow-no-subscriptions: true
-
+      # Scoped to a single Azure DevOps organisation on purpose: global tokens
+      # ("All accessible organizations") are retired on 2026-12-01, org-scoped
+      # ones are not. See docs/PUBLISHING.md for the token-free alternative.
       - name: Publish to the Visual Studio Marketplace
-        run: npx @vscode/vsce publish --packagePath filescope.vsix --azure-credential --skip-duplicate
+        run: npx @vscode/vsce publish --packagePath filescope.vsix --skip-duplicate
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
 
       - name: Publish to Open VSX
         if: ${{ secrets.OVSX_PAT != '' }}
