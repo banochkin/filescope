@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <defs>
+    <linearGradient id="bgB" x1="0" y1="0" x2="0.4" y2="1">
+      <stop offset="0" stop-color="#1B2B3A"/>
+      <stop offset="1" stop-color="#0E1620"/>
+    </linearGradient>
+  </defs>
+  <rect width="256" height="256" rx="56" fill="url(#bgB)"/>
+
+  <!-- scope ring -->
+  <circle cx="128" cy="128" r="74" fill="none" stroke="#2FB6A8" stroke-width="12"/>
+
+  <!-- crosshair ticks -->
+  <g stroke="#2FB6A8" stroke-width="12" stroke-linecap="round">
+    <line x1="128" y1="24" x2="128" y2="46"/>
+    <line x1="128" y1="210" x2="128" y2="232"/>
+    <line x1="24" y1="128" x2="46" y2="128"/>
+    <line x1="210" y1="128" x2="232" y2="128"/>
+  </g>
+
+  <!-- metadata bars inside the scope -->
+  <g fill="#E8EEF6">
+    <rect x="92" y="100" width="72" height="12" rx="6"/>
+    <rect x="92" y="122" width="48" height="12" rx="6"/>
+    <rect x="92" y="144" width="60" height="12" rx="6"/>
+  </g>
+</svg>

@@ -6,6 +6,8 @@ out/**
 node_modules/**
 src/**
 .gitignore
+test.test
+resources/icons/logo.svg
 esbuild.js
 eslint.config.mjs
 **/tsconfig.json
