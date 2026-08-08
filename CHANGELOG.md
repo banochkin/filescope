@@ -36,7 +36,10 @@ Every setting is renamed, so this release is not configuration-compatible with t
 - Permissions render setuid, setgid and sticky bits, alongside the octal form and a type
   character, matching `ls -l`.
 - Byte-sized files no longer render a meaningless fractional part (`512 B`, not `512.00 B`).
-- The details panel is themed with editor variables rather than fixed borders.
+- The details panel is themed with editor variables rather than fixed borders, and its layout
+  adapts to the panel width: label and value stack in a narrow side column, where a fixed label
+  column would squeeze paths into a few characters per line, and split into two columns once
+  there is room.
 - Build moved from webpack to esbuild, linting to ESLint flat config, tests to
   `@vscode/test-cli`. Minimum supported VS Code is now 1.96.
 

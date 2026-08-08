@@ -261,9 +261,9 @@ export function detailsHtml(
     const rows = detailRows(info, configuration)
         .map(
             (row) =>
-                `<tr><th scope="row">${escapeHtml(row.label)}</th><td>${escapeHtml(row.value)}</td></tr>`,
+                `<dt>${escapeHtml(row.label)}</dt><dd>${escapeHtml(row.value)}</dd>`,
         )
-        .join("\n            ");
+        .join("\n        ");
 
     return `<!DOCTYPE html>
 <html lang="en">
@@ -273,47 +273,69 @@ export function detailsHtml(
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>${escapeHtml(info.name)}</title>
     <style nonce="${nonce}">
+        /*
+         * The panel usually opens as a narrow column beside the editor, so the
+         * label column cannot claim a fixed width: stacking the pairs is the only
+         * layout that leaves a full-length path readable. Two columns are earned
+         * back once the panel is actually wide enough for them.
+         */
         body {
-            font-family: var(--vscode-font-family);
-            font-size: var(--vscode-font-size);
-            color: var(--vscode-foreground);
-            padding: 1rem 1.25rem;
+            font-family: var(--vscode-font-family, system-ui, sans-serif);
+            font-size: var(--vscode-font-size, 13px);
+            color: var(--vscode-foreground, inherit);
+            margin: 0;
+            padding: 1rem;
         }
         h1 {
-            font-size: 1.2em;
+            font-size: 1.15em;
             font-weight: 600;
-            margin: 0 0 1rem;
-            word-break: break-all;
+            margin: 0 0 0.5rem;
+            overflow-wrap: anywhere;
         }
-        table {
-            border-collapse: collapse;
-            width: 100%;
+        dl {
+            display: grid;
+            grid-template-columns: 1fr;
+            margin: 0;
         }
-        th, td {
-            border-bottom: 1px solid var(--vscode-widget-border, rgba(128, 128, 128, 0.35));
-            padding: 0.4rem 0.6rem;
-            text-align: left;
-            vertical-align: top;
-        }
-        th {
-            width: 14rem;
+        dt {
             font-weight: 600;
-            color: var(--vscode-descriptionForeground);
-            white-space: nowrap;
+            color: var(--vscode-descriptionForeground, inherit);
+            padding: 0.5rem 0 0.1rem;
         }
-        td {
-            font-family: var(--vscode-editor-font-family);
-            word-break: break-all;
+        dd {
+            margin: 0;
+            padding: 0 0 0.5rem;
+            font-family: var(--vscode-editor-font-family, ui-monospace, monospace);
+            border-bottom: 1px solid var(--vscode-widget-border, rgba(128, 128, 128, 0.3));
+            /* Breaks inside a word only when the word alone overflows. */
+            overflow-wrap: anywhere;
+        }
+        dd:last-of-type {
+            border-bottom: none;
+        }
+        @media (min-width: 32rem) {
+            dl {
+                grid-template-columns: minmax(6rem, 13rem) 1fr;
+                column-gap: 1.5rem;
+            }
+            dt {
+                padding: 0.5rem 0;
+                border-bottom: 1px solid var(--vscode-widget-border, rgba(128, 128, 128, 0.3));
+            }
+            dd {
+                padding: 0.5rem 0;
+            }
+            dt:last-of-type {
+                border-bottom: none;
+            }
         }
     </style>
 </head>
 <body>
     <h1>${escapeHtml(info.name)}</h1>
-    <table>
-        <tbody>
-            ${rows}
-        </tbody>
-    </table>
+    <dl>
+        ${rows}
+    </dl>
 </body>
 </html>`;
 }
