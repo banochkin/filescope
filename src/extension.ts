@@ -1,159 +1,177 @@
 import * as vscode from "vscode";
-import { Stats } from "fs";
-import { basename } from "path";
-import { platform } from "process";
-import { Configurator, Configuration } from "./configurator";
-import { FileSizeUnit, lstat, getFileType, formatPermissions, formatSize, formatDate } from "./fsUtil";
-import { StatusBarItem } from "./statusBarItem";
-import { HTMLTableBuilder } from "./html";
+import { dirname, basename } from "path";
+import { ActiveResourceTracker } from "./activeResource";
+import { ConfigurationStore } from "./configuration";
+import { DetailsPanel } from "./detailsPanel";
+import { FileInfo, readFileInfo } from "./fileInfo";
+import { clearOwnershipCache } from "./ownership";
+import { statusBarText, tooltipMarkdown } from "./render";
+import { StatusBar } from "./statusBar";
 
-class ActiveEditorUndefinedError extends Error {
-    constructor() {
-        super("Active editor is undefined");
-        this.name = "ActiveEditorUndefinedError";
-    }
-}
+const SHOW_DETAILS_COMMAND = "filescope.showDetails";
+const REFRESH_COMMAND = "filescope.refresh";
+const WATCH_DEBOUNCE_MS = 150;
 
-class ActiveEditorDocumentNotFileError extends Error {
-    constructor() {
-        super("Active editor document is not a file");
-        this.name = "ActiveEditorDocumentNotFileError";
-    }
-}
+class FileScope implements vscode.Disposable {
+    public constructor() {
+        this.configurationStore = new ConfigurationStore();
+        this.statusBar = new StatusBar(this.configurationStore.configuration, SHOW_DETAILS_COMMAND);
+        this.detailsPanel = new DetailsPanel();
+        this.tracker = new ActiveResourceTracker(() => {
+            this.watchActiveResource();
+            void this.refresh();
+        });
 
-function formatStatusBarText(stats: Stats, cfg: Configuration): string {
-    const properties = [];
+        this.subscriptions.push(
+            this.configurationStore,
+            this.statusBar,
+            this.detailsPanel,
+            this.tracker,
+            vscode.commands.registerCommand(SHOW_DETAILS_COMMAND, () => this.showDetails()),
+            vscode.commands.registerCommand(REFRESH_COMMAND, () => this.refresh()),
+            this.configurationStore.onDidChange(() => {
+                clearOwnershipCache();
+                this.statusBar.applyConfiguration(this.configurationStore.configuration);
+                void this.refresh();
+            }),
+            vscode.workspace.onDidSaveTextDocument((document) => {
+                if (document.uri.toString() === this.tracker.uri?.toString()) {
+                    void this.refresh();
+                }
+            }),
+        );
 
-    if (cfg.showPermissionsInStatusBar) {
-        properties.push(formatPermissions(stats.mode));
-    }
-    if (cfg.showSizeInStatusBar) {
-        properties.push(formatSize(stats.size, cfg.sizeUnit));
-    }
-    if (cfg.showATimeInStatusBar) {
-        properties.push(`${formatDate(stats.atime, cfg.timeFormat)} (A)`);
-    }
-    if (cfg.showMTimeInStatusBar) {
-        properties.push(`${formatDate(stats.mtime, cfg.timeFormat)} (M)`);
-    }
-    if (cfg.showCTimeInStatusBar) {
-        properties.push(`${formatDate(stats.ctime, cfg.timeFormat)} (C)`);
+        this.watchActiveResource();
+        void this.refresh();
     }
 
-    return `[ ${properties.join(" | ")} ]`;
-}
-
-function getActiveFilePath(): string {
-    const activeEditor = vscode.window.activeTextEditor;
-    if (!activeEditor) {
-        throw new ActiveEditorUndefinedError();
+    public dispose(): void {
+        this.clearWatcher();
+        this.subscriptions.forEach((subscription) => subscription.dispose());
+        this.subscriptions.length = 0;
     }
-    const uri = activeEditor.document.uri;
-    if (uri.scheme !== "file") {
-        throw new ActiveEditorDocumentNotFileError();
-    }
-    return uri.fsPath;
-}
 
-function createViewDetailsHandler(cfg: Configuration) {
-    return async () => {
+    private async refresh(): Promise<void> {
+        const uri = this.tracker.uri;
+        const configuration = this.configurationStore.configuration;
+
+        if (!uri) {
+            this.lastInfo = undefined;
+            this.statusBar.hide();
+            return;
+        }
+
+        // Reads are asynchronous, so a slow one must not overwrite a newer result.
+        const generation = ++this.generation;
+        let info: FileInfo;
         try {
-            const path = getActiveFilePath();
-            const stats = await lstat(path);
-            const name = basename(path);
-
-            const panel = vscode.window.createWebviewPanel("FileProperties", `Properties of ${name}`, vscode.ViewColumn.Beside, {});
-            const htmlTable = new HTMLTableBuilder(["Property", "Value"]);
-
-            htmlTable.addRow(["Name", `${name} `]);
-            htmlTable.addRow(["Path", `${path}`]);
-            htmlTable.addRow(["Type", `${getFileType(stats)}`]);
-            htmlTable.addRow(["Ownership", `UID=${stats.uid}, GID=${stats.gid}`]);
-            htmlTable.addRow(["Permissions", `<b>${formatPermissions(stats.mode)}</b> (oct: ${stats.mode.toString(8)})`]);
-            htmlTable.addRow(["Size", `<b>${formatSize(stats.size, cfg.sizeUnit)}</b> (${stats.size} B)`]);
-
-            htmlTable.addRow(["ID of containing device", `${stats.dev}`]);
-            htmlTable.addRow([platform === "win32" ? "File Index" : "I-node Number", `${stats.ino}`]);
-            htmlTable.addRow(["Hardware Link Count", `${stats.nlink}`]);
-
-            htmlTable.addRow(["Blocks Allocated", `<b>${stats.blocks}</b> (* 512 = ${stats.blocks * 512} B)`]);
-            htmlTable.addRow(["Preferred I/O Block Size", `${stats.blksize}`]);
-            htmlTable.addRow(["Type of device", `${stats.rdev}`]);
-
-            htmlTable.addRow(["Last Access Time", `${formatDate(stats.atime, cfg.timeFormat)}`]);
-            htmlTable.addRow(["Last Modification Time", `${formatDate(stats.mtime, cfg.timeFormat)}`]);
-            htmlTable.addRow(["Last Metadata Change Time", `${formatDate(stats.ctime, cfg.timeFormat)}`]);
-            htmlTable.addRow(["Creation Time", `${formatDate(stats.birthtime, cfg.timeFormat)}`]);
-
-            panel.webview.html = htmlTable.build();
+            info = await readFileInfo(uri, configuration.resolveOwnershipNames);
         } catch (error) {
-            if (error instanceof Error) {
-                console.error(`[File Properties] ${error.message}`);
-            } else {
-                console.error(`[File Properties] An unknown error occurred`);
+            if (generation === this.generation) {
+                this.lastInfo = undefined;
+                this.statusBar.hide();
+                this.log(error);
             }
+            return;
         }
-    };
-}
 
-function createUpdateAndShowStatusBarFn(statusBarItem: StatusBarItem, cfg: Configuration) {
-    return async () => {
-        try {
-            const path = getActiveFilePath();
-            const stats = await lstat(path);
-            statusBarItem.text = formatStatusBarText(stats, cfg);;
-            statusBarItem.show();
-        } catch (error) {
-            if (error instanceof ActiveEditorUndefinedError || error instanceof ActiveEditorDocumentNotFileError) {
-                statusBarItem.hide();
-            } else if (error instanceof Error) {
-                console.error(`[File Properties] ${error.message}`);
-            } else {
-                console.error(`[File Properties] An unknown error occurred`);
+        if (generation !== this.generation) {
+            return;
+        }
+
+        this.lastInfo = info;
+
+        if (configuration.statusBarEnabled) {
+            this.statusBar.setContent(
+                statusBarText(info, configuration),
+                tooltipMarkdown(info, configuration),
+            );
+            this.statusBar.show();
+        } else {
+            this.statusBar.hide();
+        }
+
+        if (configuration.followActiveFile) {
+            this.detailsPanel.update(info, configuration);
+        }
+    }
+
+    private async showDetails(): Promise<void> {
+        if (!this.lastInfo) {
+            await this.refresh();
+        }
+        if (!this.lastInfo) {
+            void vscode.window.showInformationMessage("FileScope: no file is currently active.");
+            return;
+        }
+        this.detailsPanel.reveal(this.lastInfo, this.configurationStore.configuration);
+    }
+
+    /**
+     * Saving is only one of the ways a file changes. A watcher scoped to the
+     * single active file catches the rest — a build touching it, a rebase, chmod
+     * from a terminal — without watching the whole workspace.
+     */
+    private watchActiveResource(): void {
+        this.clearWatcher();
+
+        const uri = this.tracker.uri;
+        if (!uri || uri.scheme !== "file") {
+            return;
+        }
+
+        const pattern = new vscode.RelativePattern(
+            vscode.Uri.file(dirname(uri.fsPath)),
+            basename(uri.fsPath),
+        );
+        const watcher = vscode.workspace.createFileSystemWatcher(pattern);
+        const onEvent = () => {
+            if (this.watchTimer) {
+                clearTimeout(this.watchTimer);
             }
+            this.watchTimer = setTimeout(() => {
+                this.watchTimer = undefined;
+                void this.refresh();
+            }, WATCH_DEBOUNCE_MS);
+        };
+
+        this.watcherSubscriptions.push(
+            watcher,
+            watcher.onDidChange(onEvent),
+            watcher.onDidCreate(onEvent),
+            watcher.onDidDelete(onEvent),
+        );
+    }
+
+    private clearWatcher(): void {
+        if (this.watchTimer) {
+            clearTimeout(this.watchTimer);
+            this.watchTimer = undefined;
         }
-    };
+        this.watcherSubscriptions.forEach((subscription) => subscription.dispose());
+        this.watcherSubscriptions.length = 0;
+    }
+
+    private log(error: unknown): void {
+        const message = error instanceof Error ? error.message : "an unknown error occurred";
+        console.error(`[FileScope] ${message}`);
+    }
+
+    private readonly configurationStore: ConfigurationStore;
+    private readonly statusBar: StatusBar;
+    private readonly detailsPanel: DetailsPanel;
+    private readonly tracker: ActiveResourceTracker;
+    private readonly subscriptions: vscode.Disposable[] = [];
+    private lastInfo: FileInfo | undefined;
+    private generation = 0;
+    private readonly watcherSubscriptions: vscode.Disposable[] = [];
+    private watchTimer: NodeJS.Timeout | undefined;
 }
 
-function createChangeEventListener(statusBarItem: StatusBarItem) {
-    return (cfg: Configuration) => {
-        statusBarItem.alignment = cfg.statusBarAlignment;
-    };
+export function activate(context: vscode.ExtensionContext): void {
+    context.subscriptions.push(new FileScope());
 }
 
-function createOnDidSaveTextDocumentListener(cb: () => any) {
-    return (document: vscode.TextDocument) => {
-        const activeDocument = vscode.window.activeTextEditor?.document;
-        if (activeDocument === document) {
-            cb();
-        }
-    };
+export function deactivate(): void {
+    // Everything is disposed through the extension context subscriptions.
 }
-
-// This method is called when your extension is activated
-export function activate(context: vscode.ExtensionContext) {
-    const configurator = Configurator.getInstance();
-    const configuration = configurator.configuration;
-
-    const disposables: vscode.Disposable[] = [];
-
-    disposables.push(vscode.commands.registerCommand("file-properties.viewDetails", createViewDetailsHandler(configuration)));
-
-    const statusBarItem = new StatusBarItem(configuration.statusBarAlignment, 1024);
-    statusBarItem.tooltip = "Click to view more detailed file properties";
-    statusBarItem.command = "file-properties.viewDetails";
-    disposables.push(statusBarItem);
-
-    configurator.addChangeEventListener(createChangeEventListener(statusBarItem));
-
-    const updateAndShowStatusBarFn = createUpdateAndShowStatusBarFn(statusBarItem, configuration);
-    disposables.push(vscode.window.onDidChangeActiveTextEditor(updateAndShowStatusBarFn));
-    disposables.push(vscode.workspace.onDidSaveTextDocument(createOnDidSaveTextDocumentListener(updateAndShowStatusBarFn)));
-
-    context.subscriptions.push(...disposables);
-
-    updateAndShowStatusBarFn();
-}
-
-// This method is called when your extension is deactivated
-export function deactivate() { }
