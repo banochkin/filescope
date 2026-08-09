@@ -40,7 +40,7 @@ jobs:
 
       - name: Publish to Open VSX
         if: ${{ env.OVSX_PAT != '' }}
-        run: npx ovsx publish filescope.vsix
+        run: npx ovsx publish filescope.vsix --skip-duplicate
 
       - name: Attach the VSIX to the GitHub release
         uses: softprops/action-gh-release@v2
