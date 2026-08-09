@@ -8,7 +8,7 @@ A file is more than its name and its size. FileScope keeps the properties you ca
 
 Most of them stop at size and modification time. FileScope answers the questions that actually come up:
 
-**Who owns this file?** `black (501)` and `staff (20)`, not a pair of bare numbers you then have to look up. Names are resolved through the system's own account database — which matters on macOS, where local users live in Directory Services and never appear in `/etc/passwd`.
+**Who owns this file?** `deploy (1001)` and `staff (20)`, not a pair of bare numbers you then have to look up. Names are resolved through the system's own account database — which matters on macOS, where local users live in Directory Services and never appear in `/etc/passwd`.
 
 **When was it created?** Creation time is its own property, never quietly substituted with the metadata change time. Where the file system genuinely records none, the property is absent rather than filled with a fake.
 
@@ -22,7 +22,7 @@ You choose what appears and in which order, through `filescope.statusBar.items`:
 
 ```jsonc
 "filescope.statusBar.items": ["permissions", "owner", "size", "mtime"]
-// -rw-r--r-- | black | 1.22 KiB | 2026-08-09 03:56:04 (M)
+// -rw-r--r-- | deploy | 1.22 KiB | 2026-08-09 03:56:04 (M)
 ```
 
 Available entries are `type`, `permissions`, `owner`, `group`, `size`, `atime`, `mtime`, `ctime` and `birthtime`. Hovering shows a summary; clicking opens the full panel.
@@ -87,6 +87,10 @@ npm test
 ```
 
 <kbd>F5</kbd> launches an Extension Development Host.
+
+## About
+
+Built and maintained by [banochkin.com DAO](https://banochkin.com).
 
 ## Credits
 

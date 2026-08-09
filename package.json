@@ -15,7 +15,7 @@
   "bugs": {
     "url": "https://github.com/banochkin/filescope/issues"
   },
-  "homepage": "https://github.com/banochkin/filescope#readme",
+  "homepage": "https://banochkin.com",
   "engines": {
     "vscode": "^1.96.0"
   },
