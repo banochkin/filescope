@@ -3,7 +3,7 @@
   "displayName": "FileScope",
   "description": "Inspect file properties without leaving the editor: permissions, ownership, size and timestamps in the status bar, full stat details in a panel.",
   "icon": "resources/icons/logo.png",
-  "version": "3.0.0",
+  "version": "3.0.2",
   "publisher": "banochkin",
   "license": "MIT",
   "author": "banochkin.com DAO <mail@banochkin.com>",

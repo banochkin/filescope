@@ -4,10 +4,12 @@ All notable changes to FileScope are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [3.0.0] - 2026-08-08
+## [3.0.2] - 2026-08-09
 
-FileScope forks [dsyx/vsc-file-properties](https://github.com/dsyx/vsc-file-properties) 2.0.0.
-Every setting is renamed, so this release is not configuration-compatible with the original.
+The first release of FileScope, forked from
+[dsyx/vsc-file-properties](https://github.com/dsyx/vsc-file-properties) 2.0.0 and continuing
+its version line. Every setting is renamed, so this release is not configuration-compatible
+with the original.
 
 ### Added
 
