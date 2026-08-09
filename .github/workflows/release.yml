@@ -10,6 +10,11 @@ permissions:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    # Secrets are not allowed in `if:` expressions — GitHub rejects the whole
+    # workflow file. Exposing it as an environment variable makes the same test
+    # legal, and keeps Open VSX optional.
+    env:
+      OVSX_PAT: ${{ secrets.OVSX_PAT }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -34,10 +39,8 @@ jobs:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
 
       - name: Publish to Open VSX
-        if: ${{ secrets.OVSX_PAT != '' }}
+        if: ${{ env.OVSX_PAT != '' }}
         run: npx ovsx publish filescope.vsix
-        env:
-          OVSX_PAT: ${{ secrets.OVSX_PAT }}
 
       - name: Attach the VSIX to the GitHub release
         uses: softprops/action-gh-release@v2
